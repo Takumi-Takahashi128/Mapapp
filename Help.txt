@@ -1,0 +1,59 @@
+====================================================================
+MAP APP (ANDROID / KOTLIN / JETPACK COMPOSE) — HELP & BUILD GUIDE
+====================================================================
+
+1. OVERVIEW
+This project is an Android consumer-style map application built with
+Kotlin, Jetpack Compose, MapLibre Native, Retrofit + Kotlinx
+Serialization, OSRM (routing/distance/ETA), Photon (geocoding/search),
+and Open-Meteo (live city & point weather).
+
+2. PROJECT STRUCTURE
+- settings.gradle.kts
+- build.gradle.kts
+- gradle.properties
+- gradle/libs.versions.toml
+- app/build.gradle.kts
+- app/src/main/AndroidManifest.xml
+- app/src/main/java/com/example/mapapp/MainActivity.kt
+- app/src/main/java/com/example/mapapp/ui/MapScreen.kt
+- app/src/main/java/com/example/mapapp/data/MapModels.kt
+- app/src/main/java/com/example/mapapp/data/MapApiService.kt
+- app/src/main/java/com/example/mapapp/viewmodel/MapViewModel.kt
+
+3. HOW TO OPEN AND BUILD IN ANDROID STUDIO
+Step 1: Extract MapApp-Android-Project.zip to a local folder (for
+        example: E:\Android\MapApp).
+Step 2: Open Android Studio -> File -> Open -> select the extracted
+        MapApp folder.
+Step 3: Wait for Gradle sync to finish (or click "Sync Project with
+        Gradle Files" on the toolbar).
+Step 4: Connect an Android device or start an Android Emulator
+        (API 26+ recommended, with Google Play Services / location
+        enabled for best GPS behavior).
+Step 5: Click Run (Shift + F10) and grant Location permissions when
+        prompted.
+
+4. FEATURES INCLUDED
+- Live MapLibre map rendering with "My Location" camera centering
+- Search bar with Photon city/place autocomplete & quick city pills
+- Tap-anywhere map weather & coordinate inspection via Open-Meteo
+  (temperature, wind speed, WMO weather condition)
+- Route Planner between origin/current location and destination via
+  OSRM (driving, walking, cycling profiles, distance, ETA, and
+  turn-by-turn steps)
+
+5. TROUBLESHOOTING COMMON ISSUES
+- "Cannot add extension with name 'kotlin'":
+  This happens if a plugin is declared twice (e.g., both alias(...)
+  and id(...) with a version). In this project, plugins are managed
+  cleanly via gradle/libs.versions.toml and alias(...) entries.
+- Map tiles or search/weather/routing requests fail:
+  Verify the device/emulator has internet access and INTERNET
+  permission is present in AndroidManifest.xml. Public free endpoints
+  (demotiles.maplibre.org, photon.komoot.io, router.project-osrm.org,
+  api.open-meteo.com) can occasionally rate-limit heavy testing.
+- Location returns null on emulator:
+  In the Android Emulator extended controls (... -> Location), set a
+  custom latitude/longitude or trigger a location update.
+====================================================================
