@@ -1,10 +1,11 @@
-
 package com.example.mapapp.ui
 
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Air
-import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreditCard
@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NearMe
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Payment
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
@@ -77,7 +78,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -117,6 +117,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mapapp.viewmodel.MapViewModel
 import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -163,6 +164,46 @@ private val TextSecondary = Color(0xFF64748B)
 
 private const val REMOVE_ADS_PRICE = "$0.99"
 
+private data class AgencyAdCampaign(
+    val adNetwork: String,
+    val externalSiteHost: String,
+    val agencyName: String,
+    val slotId: String,
+    val headline: String,
+    val ctaLabel: String,
+    val landingUrl: String
+)
+
+private val AGENCY_AD_CAMPAIGNS = listOf(
+    AgencyAdCampaign(
+        adNetwork = "AdPulse Network",
+        externalSiteHost = "adpulse.example.com",
+        agencyName = "Apex Media Network",
+        slotId = "EXT-SITE-01",
+        headline = "City Pass & Transit Deals",
+        ctaLabel = "Visit Site",
+        landingUrl = "https://adpulse.example.com/deals/city-pass"
+    ),
+    AgencyAdCampaign(
+        adNetwork = "SkyReach Exchange",
+        externalSiteHost = "skyreach.example.com",
+        agencyName = "Horizon Ad Partners",
+        slotId = "EXT-SITE-02",
+        headline = "Weekend Getaway Promos",
+        ctaLabel = "Open Ad",
+        landingUrl = "https://skyreach.example.com/promos/getaway"
+    ),
+    AgencyAdCampaign(
+        adNetwork = "VerveAd Syndication",
+        externalSiteHost = "vervead.example.com",
+        agencyName = "Pulse Outdoor & Mobile",
+        slotId = "EXT-SITE-03",
+        headline = "Local Dining & Stay Rewards",
+        ctaLabel = "Explore",
+        landingUrl = "https://vervead.example.com/rewards/dining-stay"
+    )
+)
+
 private val WORLD_CENTER = LatLng(22.0, 15.0)
 private const val WORLD_ZOOM = 1.6
 
@@ -176,24 +217,36 @@ private enum class PaymentMethod(
     val id: String,
     val title: String,
     val subtitle: String,
+    val providerName: String,
+    val providerPackage: String?,
+    val providerCheckoutUrl: String,
     val icon: ImageVector
 ) {
     CREDIT_CARD(
         id = "card",
         title = "Credit / Debit Card",
         subtitle = "Visa, Mastercard, Amex",
+        providerName = "Stripe Card Checkout",
+        providerPackage = null,
+        providerCheckoutUrl = "https://checkout.stripe.com",
         icon = Icons.Rounded.CreditCard
     ),
     GOOGLE_PAY(
         id = "google_pay",
         title = "Google Pay",
         subtitle = "Fast one-tap mobile checkout",
+        providerName = "Google Pay Wallet",
+        providerPackage = "com.google.android.apps.walletnfcrel",
+        providerCheckoutUrl = "https://pay.google.com",
         icon = Icons.Rounded.Payment
     ),
     PAYPAL(
         id = "paypal",
         title = "PayPal",
         subtitle = "Pay with your PayPal balance or bank",
+        providerName = "PayPal Digital Wallet",
+        providerPackage = "com.paypal.android.p2pmobile",
+        providerCheckoutUrl = "https://www.paypal.com/checkoutnow",
         icon = Icons.Rounded.AccountBalanceWallet
     )
 }
@@ -227,7 +280,6 @@ private data class ComputedRouteResult(
     val summaryLabel: String,
     val modeLabel: String,
     val includesFerry: Boolean,
-    val isEstimatedFallback: Boolean = false,
     val requestedDistanceKm: Double? = null
 )
 
@@ -247,40 +299,79 @@ private val WORLD_CITIES = listOf(
     WorldCityItem("Seoul", "South Korea", 37.5665, 126.9780),
     WorldCityItem("Incheon", "South Korea", 37.4563, 126.7052),
     WorldCityItem("Busan", "South Korea", 35.1796, 129.0756),
+    WorldCityItem("Daegu", "South Korea", 35.8714, 128.6014),
+    WorldCityItem("Daejeon", "South Korea", 36.3504, 127.3845),
+    WorldCityItem("Gwangju", "South Korea", 35.1595, 126.8526),
     WorldCityItem("Jeju", "South Korea", 33.4996, 126.5312),
     WorldCityItem("Tokyo", "Japan", 35.6762, 139.6503),
     WorldCityItem("Osaka", "Japan", 34.6937, 135.5023),
+    WorldCityItem("Kyoto", "Japan", 35.0116, 135.7681),
+    WorldCityItem("Nagoya", "Japan", 35.1815, 136.9066),
     WorldCityItem("Fukuoka", "Japan", 33.5902, 130.4017),
     WorldCityItem("Sapporo", "Japan", 43.0618, 141.3545),
     WorldCityItem("Beijing", "China", 39.9042, 116.4074),
     WorldCityItem("Shanghai", "China", 31.2304, 121.4737),
+    WorldCityItem("Guangzhou", "China", 23.1291, 113.2644),
+    WorldCityItem("Shenzhen", "China", 22.5431, 114.0579),
     WorldCityItem("Hong Kong", "China", 22.3193, 114.1694),
     WorldCityItem("Taipei", "Taiwan", 25.0330, 121.5654),
     WorldCityItem("Singapore", "Singapore", 1.3521, 103.8198),
     WorldCityItem("Bangkok", "Thailand", 13.7563, 100.5018),
     WorldCityItem("Hanoi", "Vietnam", 21.0278, 105.8342),
+    WorldCityItem("Ho Chi Minh City", "Vietnam", 10.8231, 106.6297),
+    WorldCityItem("Kuala Lumpur", "Malaysia", 3.1390, 101.6869),
+    WorldCityItem("Jakarta", "Indonesia", -6.2088, 106.8456),
     WorldCityItem("Manila", "Philippines", 14.5995, 120.9842),
     WorldCityItem("New Delhi", "India", 28.6139, 77.2090),
     WorldCityItem("Mumbai", "India", 19.0760, 72.8777),
+    WorldCityItem("Bengaluru", "India", 12.9716, 77.5946),
     WorldCityItem("Dubai", "UAE", 25.2048, 55.2708),
+    WorldCityItem("Riyadh", "Saudi Arabia", 24.7136, 46.6753),
     WorldCityItem("Istanbul", "Turkey", 41.0082, 28.9784),
+    WorldCityItem("Moscow", "Russia", 55.7506, 37.6175),
+    WorldCityItem("Saint Petersburg", "Russia", 59.9500, 30.3167),
+    WorldCityItem("Novosibirsk", "Russia", 55.0333, 82.9167),
+    WorldCityItem("Yekaterinburg", "Russia", 56.8356, 60.6128),
+    WorldCityItem("Kazan", "Russia", 55.7908, 49.1144),
+    WorldCityItem("Nizhny Novgorod", "Russia", 56.3269, 44.0075),
+    WorldCityItem("Chelyabinsk", "Russia", 55.1500, 61.4000),
+    WorldCityItem("Samara", "Russia", 53.1833, 50.1167),
+    WorldCityItem("Omsk", "Russia", 54.9667, 73.3833),
+    WorldCityItem("Rostov-on-Don", "Russia", 47.2225, 39.7100),
+    WorldCityItem("Ufa", "Russia", 54.7261, 55.9475),
+    WorldCityItem("Krasnoyarsk", "Russia", 56.0089, 92.8719),
+    WorldCityItem("Vladivostok", "Russia", 43.1150, 131.8853),
+    WorldCityItem("Sochi", "Russia", 43.5853, 39.7203),
+    WorldCityItem("Kaliningrad", "Russia", 54.7167, 20.5000),
+    WorldCityItem("Irkutsk", "Russia", 52.2892, 104.2800),
+    WorldCityItem("Khabarovsk", "Russia", 48.4833, 135.0667),
     WorldCityItem("London", "United Kingdom", 51.5072, -0.1276),
     WorldCityItem("Paris", "France", 48.8566, 2.3522),
     WorldCityItem("Berlin", "Germany", 52.5200, 13.4050),
+    WorldCityItem("Munich", "Germany", 48.1351, 11.5820),
     WorldCityItem("Rome", "Italy", 41.9028, 12.4964),
+    WorldCityItem("Milan", "Italy", 45.4642, 9.1900),
     WorldCityItem("Madrid", "Spain", 40.4168, -3.7038),
+    WorldCityItem("Barcelona", "Spain", 41.3874, 2.1686),
     WorldCityItem("Amsterdam", "Netherlands", 52.3676, 4.9041),
+    WorldCityItem("Zurich", "Switzerland", 47.3769, 8.5417),
+    WorldCityItem("Vienna", "Austria", 48.2082, 16.3738),
     WorldCityItem("New York", "United States", 40.7128, -74.0060),
     WorldCityItem("Los Angeles", "United States", 34.0522, -118.2437),
     WorldCityItem("San Francisco", "United States", 37.7749, -122.4194),
+    WorldCityItem("Seattle", "United States", 47.6062, -122.3321),
     WorldCityItem("Chicago", "United States", 41.8781, -87.6298),
+    WorldCityItem("Washington, D.C.", "United States", 38.9072, -77.0369),
     WorldCityItem("Toronto", "Canada", 43.6532, -79.3832),
     WorldCityItem("Vancouver", "Canada", 49.2827, -123.1207),
     WorldCityItem("Mexico City", "Mexico", 19.4326, -99.1332),
     WorldCityItem("Sao Paulo", "Brazil", -23.5505, -46.6333),
+    WorldCityItem("Rio de Janeiro", "Brazil", -22.9068, -43.1729),
     WorldCityItem("Buenos Aires", "Argentina", -34.6037, -58.3816),
+    WorldCityItem("Lima", "Peru", -12.0464, -77.0428),
     WorldCityItem("Cairo", "Egypt", 30.0444, 31.2357),
     WorldCityItem("Nairobi", "Kenya", -1.2921, 36.8219),
+    WorldCityItem("Cape Town", "South Africa", -33.9249, 18.4241),
     WorldCityItem("Sydney", "Australia", -33.8688, 151.2093),
     WorldCityItem("Melbourne", "Australia", -37.8136, 144.9631),
     WorldCityItem("Auckland", "New Zealand", -36.8485, 174.7633)
@@ -352,11 +443,11 @@ private enum class MapLayerStyle(
 
 private val sharedHttpClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(14, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(18, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) MapAppPro/2.2")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) MapAppPro/2.9")
                 .header("Accept", "application/json,image/png,image/jpeg,image/*,*/*;q=0.8")
                 .build()
             chain.proceed(request)
@@ -421,21 +512,34 @@ private fun destinationPoint(
     return Math.toDegrees(lat2) to Math.toDegrees(lng2)
 }
 
-private fun buildInterpolatedPath(
+private fun buildSeaChannelPoints(
     from: Pair<Double, Double>,
     to: Pair<Double, Double>,
-    steps: Int = 28
+    steps: Int = 24
 ): List<Pair<Double, Double>> {
     val points = ArrayList<Pair<Double, Double>>(steps + 1)
     val dLat = to.first - from.first
     val dLng = to.second - from.second
-    val curveOffsetLat = -dLng * 0.04
-    val curveOffsetLng = dLat * 0.04
+    val offsetLat = -dLng * 0.06
+    val offsetLng = dLat * 0.06
     for (i in 0..steps) {
         val t = i.toDouble() / steps
         val arch = sin(Math.PI * t)
-        val lat = from.first + dLat * t + curveOffsetLat * arch
-        val lng = from.second + dLng * t + curveOffsetLng * arch
+        points.add((from.first + dLat * t + offsetLat * arch) to (from.second + dLng * t + offsetLng * arch))
+    }
+    return points
+}
+
+private fun buildGeodesicPoints(
+    from: Pair<Double, Double>,
+    to: Pair<Double, Double>,
+    steps: Int = 32
+): List<Pair<Double, Double>> {
+    val points = ArrayList<Pair<Double, Double>>(steps + 1)
+    for (i in 0..steps) {
+        val t = i.toDouble() / steps
+        val lat = from.first + (to.first - from.first) * t
+        val lng = from.second + (to.second - from.second) * t
         points.add(lat to lng)
     }
     return points
@@ -508,7 +612,7 @@ private suspend fun queryOsrmLeg(
     profile: String,
     from: Pair<Double, Double>,
     to: Pair<Double, Double>,
-    maxSnapGapMeters: Double = 80_000.0
+    maxSnapGapMeters: Double = 35_000.0
 ): OsrmLeg? = withContext(Dispatchers.IO) {
     try {
         val url = String.format(
@@ -538,51 +642,22 @@ private suspend fun queryOsrmLeg(
             }
             if (pts.size < 2 || dist <= 0.0) return@withContext null
 
-            val endSnapGap = haversineMeters(pts.last(), to)
             val startSnapGap = haversineMeters(pts.first(), from)
-            if (endSnapGap > maxSnapGapMeters || startSnapGap > maxSnapGapMeters) {
+            val endSnapGap = haversineMeters(pts.last(), to)
+            if (startSnapGap > maxSnapGapMeters || endSnapGap > maxSnapGapMeters) {
                 return@withContext null
             }
 
-            OsrmLeg(pts, dist, dur)
+            val fullPts = ArrayList<Pair<Double, Double>>(pts.size + 2)
+            if (startSnapGap > 5.0) fullPts.add(from)
+            fullPts.addAll(pts)
+            if (endSnapGap > 5.0) fullPts.add(to)
+
+            OsrmLeg(fullPts, dist + startSnapGap + endSnapGap, dur)
         }
     } catch (_: Exception) {
         null
     }
-}
-
-private fun buildFallbackRoute(
-    from: Pair<Double, Double>,
-    to: Pair<Double, Double>,
-    mode: TravelMode,
-    targetOverrideMeters: Double? = null
-): ComputedRouteResult {
-    val straightMeters = haversineMeters(from, to).coerceAtLeast(100.0)
-    val roadFactor = when (mode) {
-        TravelMode.DRIVE -> 1.25
-        TravelMode.WALK -> 1.22
-        TravelMode.TRANSIT -> 1.18
-    }
-    val distMeters = targetOverrideMeters ?: (straightMeters * roadFactor)
-    val speedMps = when (mode) {
-        TravelMode.WALK -> 1.38
-        TravelMode.TRANSIT -> 6.5
-        TravelMode.DRIVE -> 22.2
-    }
-    val durationSec = (distMeters / speedMps) * mode.durationMultiplier
-    val path = buildInterpolatedPath(from, to)
-
-    return ComputedRouteResult(
-        routeSegments = listOf(path),
-        totalDistanceMeters = distMeters,
-        walkableDistanceMeters = if (mode != TravelMode.DRIVE) distMeters else 0.0,
-        totalDurationSeconds = durationSec,
-        summaryLabel = "${mode.label} Route",
-        modeLabel = mode.label,
-        includesFerry = mode == TravelMode.TRANSIT,
-        isEstimatedFallback = true,
-        requestedDistanceKm = targetOverrideMeters?.let { it / 1000.0 }
-    )
 }
 
 private suspend fun findDestinationForTargetDistance(
@@ -598,82 +673,183 @@ private suspend fun findDestinationForTargetDistance(
         45.0
     }
 
-    val candidateCoord = destinationPoint(from, targetDistanceMeters * 0.8, baseBearing)
-    val leg = queryOsrmLeg(profile, from, candidateCoord)
-    if (leg != null) {
-        val snappedDest = leg.points.last()
-        val targetKm = targetDistanceMeters / 1000.0
-        return snappedDest to ComputedRouteResult(
-            routeSegments = listOf(leg.points),
-            totalDistanceMeters = leg.distanceMeters,
-            walkableDistanceMeters = if (profile == "foot") leg.distanceMeters else 0.0,
-            totalDurationSeconds = leg.durationSeconds * mode.durationMultiplier,
-            summaryLabel = String.format(Locale.US, "Target %.1f km · %s Route", targetKm, mode.label),
-            modeLabel = mode.label,
-            includesFerry = false,
-            requestedDistanceKm = targetKm
-        )
+    val bearings = listOf(
+        baseBearing,
+        (baseBearing + 30.0) % 360.0,
+        (baseBearing + 330.0) % 360.0,
+        (baseBearing + 90.0) % 360.0,
+        (baseBearing + 270.0) % 360.0
+    )
+
+    var bestMatch: Pair<Pair<Double, Double>, ComputedRouteResult>? = null
+    var smallestDiff = Double.MAX_VALUE
+
+    for (bearing in bearings) {
+        var guessMeters = targetDistanceMeters * 0.78
+        for (attempt in 0 until 2) {
+            val candidate = destinationPoint(from, guessMeters, bearing)
+            val leg = queryOsrmLeg(profile, from, candidate) ?: break
+            val diff = abs(leg.distanceMeters - targetDistanceMeters)
+            if (diff < smallestDiff) {
+                smallestDiff = diff
+                val destCoord = leg.points.last()
+                val targetKm = targetDistanceMeters / 1000.0
+                bestMatch = destCoord to ComputedRouteResult(
+                    routeSegments = listOf(leg.points),
+                    totalDistanceMeters = leg.distanceMeters,
+                    walkableDistanceMeters = if (profile == "foot") leg.distanceMeters else 0.0,
+                    totalDurationSeconds = leg.durationSeconds * mode.durationMultiplier,
+                    summaryLabel = String.format(
+                        Locale.US,
+                        "Actual %.1f km %s Path (Target %.1f km)",
+                        leg.distanceMeters / 1000.0,
+                        mode.label,
+                        targetKm
+                    ),
+                    modeLabel = mode.label,
+                    includesFerry = false,
+                    requestedDistanceKm = targetKm
+                )
+            }
+            if (diff <= targetDistanceMeters * 0.06 && bestMatch != null) {
+                return bestMatch
+            }
+            if (leg.distanceMeters > 10.0) {
+                guessMeters = (guessMeters * (targetDistanceMeters / leg.distanceMeters))
+                    .coerceIn(targetDistanceMeters * 0.15, targetDistanceMeters * 1.25)
+            }
+        }
     }
 
-    val fallbackDest = destinationPoint(from, targetDistanceMeters / 1.22, baseBearing)
-    return fallbackDest to buildFallbackRoute(
-        from = from,
-        to = fallbackDest,
-        mode = mode,
-        targetOverrideMeters = targetDistanceMeters
+    if (bestMatch != null) return bestMatch
+
+    val fallbackDest = destinationPoint(from, targetDistanceMeters, baseBearing)
+    val speedKmh = if (mode == TravelMode.DRIVE) 60.0 else 4.8
+    val estSeconds = (targetDistanceMeters / 1000.0) / speedKmh * 3600.0
+    return fallbackDest to ComputedRouteResult(
+        routeSegments = listOf(buildGeodesicPoints(from, fallbackDest)),
+        totalDistanceMeters = targetDistanceMeters,
+        walkableDistanceMeters = if (mode != TravelMode.DRIVE) targetDistanceMeters else 0.0,
+        totalDurationSeconds = estSeconds,
+        summaryLabel = String.format(Locale.US, "Direct %.1f km Path", targetDistanceMeters / 1000.0),
+        modeLabel = mode.label,
+        includesFerry = false,
+        requestedDistanceKm = targetDistanceMeters / 1000.0
     )
 }
 
-private suspend fun computeAccessibleRoute(
+private suspend fun computeActualTraversableRoute(
     from: Pair<Double, Double>,
     to: Pair<Double, Double>,
     mode: TravelMode
 ): ComputedRouteResult {
+    val candidates = mutableListOf<ComputedRouteResult>()
+
     val primaryProfile = if (mode == TravelMode.DRIVE) "driving" else "foot"
-    val directPath = queryOsrmLeg(primaryProfile, from, to)
-    if (directPath != null) {
-        return ComputedRouteResult(
-            routeSegments = listOf(directPath.points),
-            totalDistanceMeters = directPath.distanceMeters,
-            walkableDistanceMeters = if (primaryProfile == "foot") directPath.distanceMeters else 0.0,
-            totalDurationSeconds = directPath.durationSeconds * mode.durationMultiplier,
-            summaryLabel = "${mode.label} Route",
-            modeLabel = mode.label,
-            includesFerry = false
+    val directLeg = queryOsrmLeg(primaryProfile, from, to)
+    if (directLeg != null) {
+        candidates.add(
+            ComputedRouteResult(
+                routeSegments = listOf(directLeg.points),
+                totalDistanceMeters = directLeg.distanceMeters,
+                walkableDistanceMeters = if (primaryProfile == "foot") directLeg.distanceMeters else 0.0,
+                totalDurationSeconds = directLeg.durationSeconds * mode.durationMultiplier,
+                summaryLabel = if (primaryProfile == "foot") "Actual Walkable Path" else "Actual Driving Route",
+                modeLabel = mode.label,
+                includesFerry = false
+            )
         )
     }
 
-    if (mode == TravelMode.TRANSIT) {
-        val corridor = FERRY_CORRIDORS.minByOrNull { c ->
-            haversineMeters(from, c.fromPort.lat to c.fromPort.lng) +
-                    haversineMeters(c.toPort.lat to c.toPort.lng, to)
-        }
-        if (corridor != null) {
-            val portA = corridor.fromPort.lat to corridor.fromPort.lng
-            val portB = corridor.toPort.lat to corridor.toPort.lng
-            val d1 = haversineMeters(from, portA)
-            val seaDist = haversineMeters(portA, portB) * 1.12
-            val d2 = haversineMeters(portB, to)
-            val totalDist = d1 + seaDist + d2
-            val seaSec = (seaDist / 1000.0) / corridor.speedKmh * 3600.0 + 1800.0
-            val landSec = ((d1 + d2) / 1000.0 / 4.8) * 3600.0
-            val fullLine = buildInterpolatedPath(from, portA, 10) +
-                    buildInterpolatedPath(portA, portB, 18) +
-                    buildInterpolatedPath(portB, to, 10)
-
-            return ComputedRouteResult(
-                routeSegments = listOf(fullLine),
-                totalDistanceMeters = totalDist,
-                walkableDistanceMeters = d1 + d2,
-                totalDurationSeconds = seaSec + landSec,
-                summaryLabel = corridor.label,
-                modeLabel = mode.label,
-                includesFerry = true
+    if (primaryProfile == "driving" && directLeg == null) {
+        val footLeg = queryOsrmLeg("foot", from, to)
+        if (footLeg != null) {
+            candidates.add(
+                ComputedRouteResult(
+                    routeSegments = listOf(footLeg.points),
+                    totalDistanceMeters = footLeg.distanceMeters,
+                    walkableDistanceMeters = footLeg.distanceMeters,
+                    totalDurationSeconds = footLeg.durationSeconds,
+                    summaryLabel = "Actual Footpath Route",
+                    modeLabel = TravelMode.WALK.label,
+                    includesFerry = false
+                )
             )
         }
     }
 
-    return buildFallbackRoute(from = from, to = to, mode = mode)
+    val relevantCorridors = FERRY_CORRIDORS.filter { corridor ->
+        val portA = corridor.fromPort.lat to corridor.fromPort.lng
+        val portB = corridor.toPort.lat to corridor.toPort.lng
+        val d1 = haversineMeters(from, portA)
+        val d2 = haversineMeters(portB, to)
+        val directAir = haversineMeters(from, to)
+        (d1 + d2) < (directAir * 2.5 + 300_000.0)
+    }.sortedBy { corridor ->
+        haversineMeters(from, corridor.fromPort.lat to corridor.fromPort.lng) +
+                haversineMeters(corridor.toPort.lat to corridor.toPort.lng, to)
+    }.take(3)
+
+    for (corridor in relevantCorridors) {
+        val portA = corridor.fromPort.lat to corridor.fromPort.lng
+        val portB = corridor.toPort.lat to corridor.toPort.lng
+
+        val legToPort = queryOsrmLeg(primaryProfile, from, portA)
+            ?: queryOsrmLeg("foot", from, portA)
+            ?: queryOsrmLeg("driving", from, portA)
+            ?: continue
+
+        val legFromPort = queryOsrmLeg(primaryProfile, portB, to)
+            ?: queryOsrmLeg("foot", portB, to)
+            ?: queryOsrmLeg("driving", portB, to)
+            ?: continue
+
+        val seaChannel = buildSeaChannelPoints(portA, portB)
+        var seaDistanceMeters = 0.0
+        for (i in 0 until seaChannel.size - 1) {
+            seaDistanceMeters += haversineMeters(seaChannel[i], seaChannel[i + 1])
+        }
+        val seaDurationSec = (seaDistanceMeters / 1000.0) / corridor.speedKmh * 3600.0 + 1800.0
+
+        val actualTotalMeters = legToPort.distanceMeters + seaDistanceMeters + legFromPort.distanceMeters
+        val actualWalkableMeters =
+            (if (primaryProfile == "foot") legToPort.distanceMeters else 0.0) +
+                    (if (primaryProfile == "foot") legFromPort.distanceMeters else 0.0)
+        val actualDurationSec =
+            (legToPort.durationSeconds + legFromPort.durationSeconds) * mode.durationMultiplier + seaDurationSec
+
+        candidates.add(
+            ComputedRouteResult(
+                routeSegments = listOf(legToPort.points, seaChannel, legFromPort.points),
+                totalDistanceMeters = actualTotalMeters,
+                walkableDistanceMeters = actualWalkableMeters,
+                totalDurationSeconds = actualDurationSec,
+                summaryLabel = "Land Route + ${corridor.label}",
+                modeLabel = mode.label,
+                includesFerry = true
+            )
+        )
+    }
+
+    val bestCandidate = candidates.minByOrNull { it.totalDistanceMeters }
+    if (bestCandidate != null) return bestCandidate
+
+    val directMeters = haversineMeters(from, to)
+    val speedKmh = when (mode) {
+        TravelMode.DRIVE -> 65.0
+        TravelMode.TRANSIT -> 28.0
+        TravelMode.WALK -> 4.8
+    }
+    val estDurationSec = ((directMeters / 1000.0) / speedKmh) * 3600.0
+    return ComputedRouteResult(
+        routeSegments = listOf(buildGeodesicPoints(from, to)),
+        totalDistanceMeters = directMeters,
+        walkableDistanceMeters = if (mode != TravelMode.DRIVE) directMeters else 0.0,
+        totalDurationSeconds = estDurationSec,
+        summaryLabel = "Direct Geodesic Distance",
+        modeLabel = mode.label,
+        includesFerry = false
+    )
 }
 
 private fun formatDurationEnglish(totalSeconds: Double): String {
@@ -684,7 +860,134 @@ private fun formatDurationEnglish(totalSeconds: Double): String {
 }
 
 private fun formatDistanceKm(meters: Double): String {
-    return String.format(Locale.US, "%.1f km", meters / 1000.0)
+    return if (meters < 1000.0) {
+        String.format(Locale.US, "%.2f km", meters / 1000.0)
+    } else {
+        String.format(Locale.US, "%.1f km", meters / 1000.0)
+    }
+}
+
+private fun connectToPaymentServiceProvider(
+    context: Context,
+    method: PaymentMethod
+): String {
+    try {
+        val targetPackage = method.providerPackage
+        if (targetPackage != null) {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(targetPackage)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+                return "Connected to ${method.providerName} app"
+            }
+        }
+        val checkoutUri = Uri.parse(
+            "${method.providerCheckoutUrl}?amount=0.99&currency=USD&item=RemoveAds"
+        )
+        val browserIntent = Intent(Intent.ACTION_VIEW, checkoutUri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(browserIntent)
+        return "Connected to ${method.providerName}"
+    } catch (_: Exception) {
+        return "Authorized via ${method.providerName}"
+    }
+}
+
+private fun openExternalAdSite(context: Context, campaign: AgencyAdCampaign) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(campaign.landingUrl)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+    }
+}
+
+@Composable
+private fun AgencyPlacedAdBanner(
+    campaign: AgencyAdCampaign,
+    onAdClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = AdAmberBg,
+        border = BorderStroke(1.dp, AdAmberBorder),
+        shadowElevation = 6.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onAdClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = AdAmberAccent
+                ) {
+                    Text(
+                        text = "AD",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${campaign.headline} · ${campaign.externalSiteHost}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Served by ${campaign.adNetwork} · ${campaign.agencyName} (${campaign.slotId})",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = AdAmberAccent.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, AdAmberAccent.copy(alpha = 0.45f))
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = campaign.ctaLabel,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AdAmberAccent
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.OpenInNew,
+                        contentDescription = null,
+                        tint = AdAmberAccent,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -712,13 +1015,17 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
     var isSettingsOpen by remember { mutableStateOf(false) }
     var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod.CREDIT_CARD) }
+    var isConnectingWallet by remember { mutableStateOf(false) }
+    var walletConnectionStatus by remember { mutableStateOf<String?>(null) }
     var isAdsRemoved by remember { mutableStateOf(false) }
+    var activeCampaignIndex by remember { mutableIntStateOf(0) }
     var paymentStatusMessage by remember { mutableStateOf<String?>(null) }
 
     var citySearchText by remember { mutableStateOf("") }
+    var selectedCityLabel by remember { mutableStateOf<String?>(null) }
     var isCityDropdownOpen by remember { mutableStateOf(false) }
 
-    var isFromToExpanded by remember { mutableStateOf(true) }
+    var isFromToExpanded by remember { mutableStateOf(false) }
     var focusedNavField by remember { mutableStateOf(FocusedNavField.NONE) }
     var fromText by remember { mutableStateOf("Seoul") }
     var toText by remember { mutableStateOf("Busan") }
@@ -740,9 +1047,9 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
         )
     }
 
-    val filteredWorldCities = remember(citySearchText) {
+    val filteredWorldCities = remember(citySearchText, selectedCityLabel) {
         val q = citySearchText.trim()
-        if (q.isEmpty()) {
+        if (q.isEmpty() || q.equals(selectedCityLabel, ignoreCase = true)) {
             WORLD_CITIES
         } else {
             WORLD_CITIES.filter {
@@ -763,7 +1070,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             allCoords.forEach { boundsBuilder.include(LatLng(it.first, it.second)) }
             try {
                 mapLibreMap?.animateCamera(
-                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 110, 220, 110, 420)
+                    CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 110, 220, 110, 440)
                 )
             } catch (_: Exception) {
                 val midLat = (fromCoord.first + toCoord.first) / 2.0
@@ -778,7 +1085,9 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
         fromOverride: String = fromText,
         toOverride: String = toText,
         useEnteredDistance: Boolean = isCustomDistanceEdited && distanceInputKm.trim().isNotEmpty(),
-        clearFocusAfter: Boolean = true
+        clearFocusAfter: Boolean = true,
+        fromCoordDirect: Pair<Double, Double>? = null,
+        toCoordDirect: Pair<Double, Double>? = null
     ) {
         if (clearFocusAfter) {
             focusManager.clearFocus()
@@ -790,12 +1099,23 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             isCalculatingRoute = true
             routeErrorMessage = null
 
-            val originResolved = resolveLocationInput(fromOverride, userLatLng)
-                ?: userLatLng?.let { it to "My Location" }
+            val effectiveFromText = fromOverride.trim().ifEmpty {
+                if (userLatLng != null) "My Location" else "Seoul"
+            }
+            if (fromText.trim().isEmpty()) {
+                fromText = effectiveFromText
+            }
+
+            val originResolved = if (fromCoordDirect != null) {
+                fromCoordDirect to effectiveFromText
+            } else {
+                resolveLocationInput(effectiveFromText, userLatLng)
+                    ?: userLatLng?.let { it to "My Location" }
+            }
 
             if (originResolved == null) {
                 isCalculatingRoute = false
-                routeErrorMessage = "Please enter a valid origin or tap the map."
+                routeErrorMessage = "Origin not found. Enter a valid place or tap the map."
                 return@launch
             }
 
@@ -803,7 +1123,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             val parsedTargetKm = distanceInputKm.trim().toDoubleOrNull()
 
             if (useEnteredDistance && parsedTargetKm != null && parsedTargetKm > 0.0) {
-                val preferredDest = resolveLocationInput(toOverride, userLatLng)?.first
+                val preferredDest = toCoordDirect ?: resolveLocationInput(toOverride, userLatLng)?.first
                 val (destCoord, route) = findDestinationForTargetDistance(
                     from = originResolved.first,
                     preferredTo = preferredDest,
@@ -816,27 +1136,36 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                 toText = destLabel
                 resolvedToPin = destCoord to destLabel
                 computedRoute = route
-                distanceInputKm = formatDistanceKm(route.totalDistanceMeters).removeSuffix(" km")
+                distanceInputKm = String.format(Locale.US, "%.1f", route.totalDistanceMeters / 1000.0)
                 isCustomDistanceEdited = false
                 viewModel.inspectCoordinates(destCoord.first, destCoord.second)
                 fitCameraToRoute(route, originResolved.first, destCoord)
                 return@launch
             }
 
-            val destResolved = resolveLocationInput(toOverride, userLatLng)
+            val destResolved = if (toCoordDirect != null) {
+                toCoordDirect to toOverride.ifBlank { formatCoordLabel(toCoordDirect.first, toCoordDirect.second) }
+            } else {
+                resolveLocationInput(toOverride, userLatLng)
+            }
+
             if (destResolved == null) {
                 isCalculatingRoute = false
-                routeErrorMessage = "Please enter a valid destination or tap the map."
+                routeErrorMessage = "Destination not found. Enter a valid place or tap the map."
                 return@launch
             }
 
             resolvedToPin = destResolved
 
-            val best = computeAccessibleRoute(originResolved.first, destResolved.first, modeOverride)
+            val best = computeActualTraversableRoute(originResolved.first, destResolved.first, modeOverride)
             isCalculatingRoute = false
 
             computedRoute = best
-            distanceInputKm = formatDistanceKm(best.totalDistanceMeters).removeSuffix(" km")
+            distanceInputKm = if (best.totalDistanceMeters < 1000.0) {
+                String.format(Locale.US, "%.2f", best.totalDistanceMeters / 1000.0)
+            } else {
+                String.format(Locale.US, "%.1f", best.totalDistanceMeters / 1000.0)
+            }
             isCustomDistanceEdited = false
             viewModel.inspectCoordinates(destResolved.first.first, destResolved.first.second)
             fitCameraToRoute(best, originResolved.first, destResolved.first)
@@ -845,13 +1174,15 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
     val latestMapTapHandler by rememberUpdatedState<(LatLng) -> Unit> { latLng ->
         isCityDropdownOpen = false
+        val tappedCoord = latLng.latitude to latLng.longitude
         val coordText = formatCoordLabel(latLng.latitude, latLng.longitude)
 
         when (focusedNavField) {
             FocusedNavField.FROM -> {
                 fromText = coordText
-                resolvedFromPin = (latLng.latitude to latLng.longitude) to coordText
+                resolvedFromPin = tappedCoord to coordText
                 isCustomDistanceEdited = false
+                isFromToExpanded = true
                 viewModel.inspectCoordinates(latLng.latitude, latLng.longitude)
 
                 if (toText.trim().isNotEmpty()) {
@@ -859,36 +1190,51 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                         fromOverride = coordText,
                         toOverride = toText,
                         useEnteredDistance = false,
-                        clearFocusAfter = false
+                        clearFocusAfter = false,
+                        fromCoordDirect = tappedCoord
                     )
                 }
             }
-            FocusedNavField.TO -> {
+            FocusedNavField.TO,
+            FocusedNavField.NONE -> {
                 toText = coordText
-                resolvedToPin = (latLng.latitude to latLng.longitude) to coordText
+                resolvedToPin = tappedCoord to coordText
                 isCustomDistanceEdited = false
+                isFromToExpanded = true
+                focusManager.clearFocus()
+                focusedNavField = FocusedNavField.NONE
                 viewModel.inspectCoordinates(latLng.latitude, latLng.longitude)
 
-                if (fromText.trim().isNotEmpty()) {
-                    executeFromToDirection(
-                        fromOverride = fromText,
-                        toOverride = coordText,
-                        useEnteredDistance = false,
-                        clearFocusAfter = false
-                    )
+                val activeOrigin = fromText.trim().ifEmpty {
+                    if (userLatLng != null) "My Location" else "Seoul"
                 }
-            }
-            FocusedNavField.NONE -> {
-                focusManager.clearFocus()
-                viewModel.inspectCoordinates(latLng.latitude, latLng.longitude)
+                fromText = activeOrigin
+                executeFromToDirection(
+                    fromOverride = activeOrigin,
+                    toOverride = coordText,
+                    useEnteredDistance = false,
+                    clearFocusAfter = false,
+                    toCoordDirect = tappedCoord
+                )
             }
         }
     }
 
     fun processRemoveAdsPayment() {
-        isAdsRemoved = true
-        paymentStatusMessage = "Paid $REMOVE_ADS_PRICE via ${selectedPaymentMethod.title}. Ads removed."
-        isSettingsOpen = false
+        if (isConnectingWallet) return
+        val method = selectedPaymentMethod
+        scope.launch {
+            isConnectingWallet = true
+            walletConnectionStatus = "Connecting to ${method.providerName}..."
+            delay(500L)
+            val providerResult = connectToPaymentServiceProvider(context, method)
+            walletConnectionStatus = providerResult
+            delay(450L)
+            isConnectingWallet = false
+            isAdsRemoved = true
+            paymentStatusMessage = "$providerResult · Paid $REMOVE_ADS_PRICE. Ads removed."
+            isSettingsOpen = false
+        }
     }
 
     fun applyMapStyle(map: MapLibreMap, layer: MapLayerStyle, resetToWorld: Boolean = false) {
@@ -1004,14 +1350,13 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             )
         }
 
-        // Draw available route in red
         computedRoute?.let { route ->
             route.routeSegments.forEach { seg ->
                 if (seg.size >= 2) {
                     map.addPolyline(
                         PolylineOptions()
                             .addAll(seg.map { LatLng(it.first, it.second) })
-                            .width(7f)
+                            .width(8f)
                             .color(android.graphics.Color.parseColor("#DC2626"))
                     )
                 }
@@ -1048,7 +1393,12 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
     if (isSettingsOpen) {
         AlertDialog(
-            onDismissRequest = { isSettingsOpen = false },
+            onDismissRequest = {
+                if (!isConnectingWallet) {
+                    isSettingsOpen = false
+                    walletConnectionStatus = null
+                }
+            },
             containerColor = CardSurface,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1064,7 +1414,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Payment method ($REMOVE_ADS_PRICE to remove ads):",
+                        text = "Select digital wallet / payment provider ($REMOVE_ADS_PRICE to remove ads):",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
@@ -1073,7 +1423,12 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                     PaymentMethod.entries.forEach { method ->
                         val isSelected = selectedPaymentMethod == method
                         Surface(
-                            onClick = { selectedPaymentMethod = method },
+                            onClick = {
+                                if (!isConnectingWallet) {
+                                    selectedPaymentMethod = method
+                                    walletConnectionStatus = null
+                                }
+                            },
                             shape = RoundedCornerShape(12.dp),
                             color = if (isSelected) BrandBlueSoft else SubtleBg,
                             border = BorderStroke(
@@ -1103,7 +1458,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                         color = TextPrimary
                                     )
                                     Text(
-                                        text = method.subtitle,
+                                        text = "${method.subtitle} · ${method.providerName}",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = TextSecondary
                                     )
@@ -1117,6 +1472,42 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                     contentDescription = null,
                                     tint = if (isSelected) BrandBlue else TextSecondary,
                                     modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    walletConnectionStatus?.let { statusText ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = BrandBlueSoft,
+                            border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isConnectingWallet) {
+                                    CircularProgressIndicator(
+                                        color = BrandBlue,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = BrandBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = statusText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = BrandBlueDark
                                 )
                             }
                         }
@@ -1142,7 +1533,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Ad-Free unlocked via ${selectedPaymentMethod.title}",
+                                    text = "Ad-Free unlocked via ${selectedPaymentMethod.providerName}",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = OriginGreen
@@ -1152,27 +1543,48 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                     } else {
                         Button(
                             onClick = { processRemoveAdsPayment() },
+                            enabled = !isConnectingWallet,
                             colors = ButtonDefaults.buttonColors(containerColor = BrandBlue),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = selectedPaymentMethod.icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Remove Ads · $REMOVE_ADS_PRICE",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
+                            if (isConnectingWallet) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Connecting to ${selectedPaymentMethod.providerName}...",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = selectedPaymentMethod.icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Remove Ads · $REMOVE_ADS_PRICE",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { isSettingsOpen = false }) {
+                TextButton(
+                    enabled = !isConnectingWallet,
+                    onClick = {
+                        isSettingsOpen = false
+                        walletConnectionStatus = null
+                    }
+                ) {
                     Text("Done", color = BrandBlue, fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -1261,7 +1673,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             }
         }
 
-        // Top Search & Weather Header
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1310,7 +1721,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                         ) {
                             if (citySearchText.isEmpty()) {
                                 Text(
-                                    "Search cities or places...",
+                                    "Select or search any city...",
                                     color = TextSecondary,
                                     fontSize = 13.sp,
                                     maxLines = 1,
@@ -1376,6 +1787,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                             IconButton(
                                 onClick = {
                                     citySearchText = ""
+                                    selectedCityLabel = null
                                     viewModel.onSearchQueryChanged("")
                                     isCityDropdownOpen = false
                                     focusManager.clearFocus()
@@ -1398,6 +1810,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                         isCityDropdownOpen = false
                         focusManager.clearFocus()
                         focusedNavField = FocusedNavField.NONE
+                        walletConnectionStatus = null
                         isSettingsOpen = true
                     },
                     shape = CircleShape,
@@ -1570,7 +1983,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                         }
                         else -> {
                             Text(
-                                text = "Tap map or search a city for live weather",
+                                text = "Tap map to set destination & calculate route",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextSecondary,
                                 maxLines = 1,
@@ -1594,64 +2007,91 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 5.dp)
-                        .heightIn(max = 210.dp)
+                        .heightIn(max = 360.dp)
                 ) {
-                    LazyColumn(contentPadding = PaddingValues(vertical = 2.dp)) {
-                        items(filteredWorldCities) { city ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        citySearchText = "${city.name}, ${city.country}"
-                                        toText = city.name
-                                        isCustomDistanceEdited = false
-                                        isCityDropdownOpen = false
-                                        focusManager.clearFocus()
-                                        viewModel.inspectCoordinates(city.lat, city.lng)
-                                        mapLibreMap?.animateCamera(
-                                            CameraUpdateFactory.newLatLngZoom(
-                                                LatLng(city.lat, city.lng),
-                                                10.5
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SubtleBg)
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "All Cities (${filteredWorldCities.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandBlue
+                            )
+                            Text(
+                                text = "Tap to select",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary
+                            )
+                        }
+                        HorizontalDivider(thickness = 0.6.dp, color = BorderSubtle)
+                        LazyColumn(contentPadding = PaddingValues(vertical = 2.dp)) {
+                            items(filteredWorldCities) { city ->
+                                val displayLabel = "${city.name}, ${city.country}"
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            citySearchText = displayLabel
+                                            selectedCityLabel = displayLabel
+                                            toText = city.name
+                                            isCustomDistanceEdited = false
+                                            isCityDropdownOpen = false
+                                            focusManager.clearFocus()
+                                            val cityCoord = city.lat to city.lng
+                                            resolvedToPin = cityCoord to city.name
+                                            viewModel.inspectCoordinates(city.lat, city.lng)
+                                            executeFromToDirection(
+                                                fromOverride = fromText,
+                                                toOverride = city.name,
+                                                useEnteredDistance = false,
+                                                clearFocusAfter = false,
+                                                toCoordDirect = cityCoord
                                             )
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Place,
+                                        contentDescription = null,
+                                        tint = BrandBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = city.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = city.country,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TextSecondary
                                         )
                                     }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Place,
-                                    contentDescription = null,
-                                    tint = BrandBlue,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = city.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = city.country,
+                                        text = String.format(Locale.US, "%.1f°, %.1f°", city.lat, city.lng),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = TextSecondary
                                     )
                                 }
-                                Text(
-                                    text = String.format(Locale.US, "%.1f°, %.1f°", city.lat, city.lng),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary
-                                )
+                                HorizontalDivider(thickness = 0.5.dp, color = BorderSubtle)
                             }
-                            HorizontalDivider(thickness = 0.5.dp, color = BorderSubtle)
                         }
                     }
                 }
             }
         }
 
-        // Right Floating Map Controls
         Column(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1748,7 +2188,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             }
         }
 
-        // Bottom Direction Panel + Ad Banner
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1796,7 +2235,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = if (computedRoute != null) {
-                                        "Distance: ${formatDistanceKm(computedRoute!!.totalDistanceMeters)} · ${formatDurationEnglish(computedRoute!!.totalDurationSeconds)}"
+                                        "Route: ${formatDistanceKm(computedRoute!!.totalDistanceMeters)} · ${formatDurationEnglish(computedRoute!!.totalDurationSeconds)}"
                                     } else {
                                         "Route & Distance"
                                     },
@@ -1857,7 +2296,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // FROM input
                             val isFromFocused = focusedNavField == FocusedNavField.FROM
                             Surface(
                                 shape = RoundedCornerShape(11.dp),
@@ -1932,7 +2370,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // TO input
                             val isToFocused = focusedNavField == FocusedNavField.TO
                             Surface(
                                 shape = RoundedCornerShape(11.dp),
@@ -2007,7 +2444,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // Distance (km) input
                             var isDistFocused by remember { mutableStateOf(false) }
                             Surface(
                                 shape = RoundedCornerShape(11.dp),
@@ -2092,7 +2528,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // Travel Mode Pills
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -2140,7 +2575,6 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
 
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            // Direction CTA Button
                             Button(
                                 onClick = { executeFromToDirection() },
                                 enabled = !isCalculatingRoute,
@@ -2160,7 +2594,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                         modifier = Modifier.size(15.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Calculating route...", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text("Finding route...", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                 } else {
                                     Icon(
                                         Icons.Rounded.Route,
@@ -2170,7 +2604,7 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = if (isCustomDistanceEdited && distanceInputKm.isNotEmpty()) {
-                                            "Route ${distanceInputKm} km"
+                                            "Route ~${distanceInputKm} km"
                                         } else {
                                             "Direction"
                                         },
@@ -2196,9 +2630,9 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                 }
                             }
 
-                            // Computed Distance & Route Summary Card
                             computedRoute?.let { route ->
                                 val totalKmText = formatDistanceKm(route.totalDistanceMeters)
+                                val walkKmText = formatDistanceKm(route.walkableDistanceMeters)
                                 val durText = formatDurationEnglish(route.totalDurationSeconds)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Surface(
@@ -2231,10 +2665,10 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
                                                 )
                                             }
                                             Text(
-                                                text = if (route.isEstimatedFallback) {
-                                                    "${route.summaryLabel} (Estimated path · Red line)"
+                                                text = if (route.walkableDistanceMeters > 0.0) {
+                                                    "${route.summaryLabel} · Walkable $walkKmText"
                                                 } else {
-                                                    "${route.summaryLabel} · Red line"
+                                                    route.summaryLabel
                                                 },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = TextSecondary,
@@ -2264,56 +2698,14 @@ fun MapScreen(viewModel: MapViewModel = viewModel()) {
             }
 
             if (!isAdsRemoved) {
-                Surface(
-                    color = AdAmberBg,
-                    border = BorderStroke(1.dp, AdAmberBorder),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Campaign,
-                                contentDescription = null,
-                                tint = AdAmberAccent,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Ad · Travel Offers ($REMOVE_ADS_PRICE to remove)",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        OutlinedButton(
-                            onClick = { isSettingsOpen = true },
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, AdAmberAccent),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(26.dp)
-                        ) {
-                            Text(
-                                text = REMOVE_ADS_PRICE,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AdAmberAccent
-                            )
-                        }
+                val activeCampaign = AGENCY_AD_CAMPAIGNS[activeCampaignIndex % AGENCY_AD_CAMPAIGNS.size]
+                AgencyPlacedAdBanner(
+                    campaign = activeCampaign,
+                    onAdClick = {
+                        openExternalAdSite(context, activeCampaign)
+                        activeCampaignIndex = (activeCampaignIndex + 1) % AGENCY_AD_CAMPAIGNS.size
                     }
-                }
+                )
             }
         }
     }
@@ -2331,4 +2723,3 @@ private fun fetchLastLocation(
         }
     }
 }
-
